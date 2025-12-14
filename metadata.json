@@ -1,0 +1,5 @@
+{
+  "name": "PDF to Image Converter",
+  "description": "A client-side tool to convert PDF pages into high-quality images (PNG/JPG) securely within your browser.",
+  "requestFramePermissions": []
+}
