@@ -590,12 +590,13 @@
                     downloadMaskHeight
                 );
 
-                const imgData = tempCanvas.toDataURL('image/jpeg', 1.0);
+                const imgData = tempCanvas.toDataURL('image/png');
                 
                 // 根據原始 PDF 頁面的方向和尺寸創建 jsPDF
+                // PDF.js viewport 回傳的尺寸已經是 pt 單位，不需要額外轉換
                 const orientation = originalWidth > originalHeight ? 'landscape' : 'portrait';
-                const pdfPageWidth = originalWidth * 0.75; // 72 DPI，轉換為 pt (1px ≈ 0.75pt)
-                const pdfPageHeight = originalHeight * 0.75;
+                const pdfPageWidth = originalWidth;
+                const pdfPageHeight = originalHeight;
                 
                 if (i === 1) {
                     newPdf = new jsPDF({
@@ -607,7 +608,7 @@
                     newPdf.addPage([pdfPageWidth, pdfPageHeight], orientation);
                 }
                 
-                newPdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight);
+                newPdf.addImage(imgData, 'PNG', 0, 0, pdfPageWidth, pdfPageHeight);
             }
 
             newPdf.save('masked_document.pdf');
