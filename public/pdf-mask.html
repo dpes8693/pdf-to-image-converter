@@ -303,7 +303,7 @@
                 <div class="control-group">
                     <label>遮罩寬度</label>
                     <div class="slider-container">
-                        <input type="range" id="maskWidth" min="10" max="400" value="10">
+                        <input type="range" id="maskWidth" min="10" max="810" value="10">
                         <span id="maskWidthValue">10</span> px
                     </div>
                 </div>
@@ -311,7 +311,7 @@
                 <div class="control-group">
                     <label>遮罩高度</label>
                     <div class="slider-container">
-                        <input type="range" id="maskHeight" min="10" max="300" value="10">
+                        <input type="range" id="maskHeight" min="10" max="440" value="10">
                         <span id="maskHeightValue">10</span> px
                     </div>
                 </div>
@@ -519,54 +519,95 @@
             status.innerHTML = '⏳ 處理中...';
             status.className = 'status info';
 
-            const x = parseInt(maskXInput.value);
-            const y = parseInt(maskYInput.value);
-            const width = parseInt(maskWidthInput.value);
-            const height = parseInt(maskHeightInput.value);
+            // 取得預覽時的遮罩參數（這些是基於 CSS 顯示尺寸的像素值）
+            const maskX = parseInt(maskXInput.value);
+            const maskY = parseInt(maskYInput.value);
+            const maskWidth = parseInt(maskWidthInput.value);
+            const maskHeight = parseInt(maskHeightInput.value);
             const color = maskColorInput.value;
             const opacity = parseInt(maskOpacityInput.value) / 100;
+
+            // 取得預覽 canvas 的實際像素尺寸和 CSS 顯示尺寸
+            const canvasActualWidth = canvas.width;
+            const canvasActualHeight = canvas.height;
+            const canvasDisplayWidth = canvas.getBoundingClientRect().width;
+            const canvasDisplayHeight = canvas.getBoundingClientRect().height;
+            
+            // CSS 顯示尺寸 → 實際像素尺寸的比例
+            const displayToActualRatio = canvasActualWidth / canvasDisplayWidth;
 
             const pdfBytes = await fileInput.files[0].arrayBuffer();
             const loadingTask = pdfjsLib.getDocument(pdfBytes);
             const pdf = await loadingTask.promise;
 
             const { jsPDF } = window.jspdf;
-            const newPdf = new jsPDF();
+            let newPdf = null;
             
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
-                const viewport = page.getViewport({scale: 2});
+                
+                // 取得原始頁面尺寸（scale = 1）
+                const originalViewport = page.getViewport({scale: 1});
+                const originalWidth = originalViewport.width;
+                const originalHeight = originalViewport.height;
+                
+                // 預覽用的 viewport (scale = 1.5)
+                const previewViewport = page.getViewport({scale: scale});
+                
+                // 下載用的 viewport（更高品質）
+                const renderScale = 2;
+                const renderViewport = page.getViewport({scale: renderScale});
                 
                 const tempCanvas = document.createElement('canvas');
-                tempCanvas.height = viewport.height;
-                tempCanvas.width = viewport.width;
+                tempCanvas.height = renderViewport.height;
+                tempCanvas.width = renderViewport.width;
                 const tempCtx = tempCanvas.getContext('2d');
 
                 await page.render({
                     canvasContext: tempCtx,
-                    viewport: viewport
+                    viewport: renderViewport
                 }).promise;
 
+                // 計算遮罩在下載尺寸中的位置
+                // 1. 先將 CSS 顯示尺寸轉為預覽 canvas 實際像素尺寸
+                // 2. 再轉為下載尺寸
+                const previewToRenderRatio = renderScale / scale;
+                const cssToRenderRatio = displayToActualRatio * previewToRenderRatio;
+                
+                const downloadMaskX = maskX * cssToRenderRatio;
+                const downloadMaskY = maskY * cssToRenderRatio;
+                const downloadMaskWidth = maskWidth * cssToRenderRatio;
+                const downloadMaskHeight = maskHeight * cssToRenderRatio;
+
                 // 繪製遮罩
+                // CSS right/bottom 轉換為 canvas 左上角座標
                 tempCtx.fillStyle = color;
                 tempCtx.globalAlpha = opacity;
                 tempCtx.fillRect(
-                    viewport.width - x - width,
-                    viewport.height - y - height,
-                    width,
-                    height
+                    renderViewport.width - downloadMaskX - downloadMaskWidth,
+                    renderViewport.height - downloadMaskY - downloadMaskHeight,
+                    downloadMaskWidth,
+                    downloadMaskHeight
                 );
 
                 const imgData = tempCanvas.toDataURL('image/jpeg', 1.0);
                 
-                if (i > 1) {
-                    newPdf.addPage();
+                // 根據原始 PDF 頁面的方向和尺寸創建 jsPDF
+                const orientation = originalWidth > originalHeight ? 'landscape' : 'portrait';
+                const pdfPageWidth = originalWidth * 0.75; // 72 DPI，轉換為 pt (1px ≈ 0.75pt)
+                const pdfPageHeight = originalHeight * 0.75;
+                
+                if (i === 1) {
+                    newPdf = new jsPDF({
+                        orientation: orientation,
+                        unit: 'pt',
+                        format: [pdfPageWidth, pdfPageHeight]
+                    });
+                } else {
+                    newPdf.addPage([pdfPageWidth, pdfPageHeight], orientation);
                 }
                 
-                const pdfWidth = newPdf.internal.pageSize.getWidth();
-                const pdfHeight = newPdf.internal.pageSize.getHeight();
-                
-                newPdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                newPdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight);
             }
 
             newPdf.save('masked_document.pdf');
